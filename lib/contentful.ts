@@ -38,16 +38,30 @@ export interface Vehicle {
 }
 
 const space = process.env.CONTENTFUL_SPACE_ID;
-const accessToken = process.env.CONTENTFUL_ACCESS_TOKEN;
+const deliveryToken = process.env.CONTENTFUL_ACCESS_TOKEN;
+const previewToken = process.env.CONTENTFUL_PREVIEW_ACCESS_TOKEN;
+const environment = process.env.CONTENTFUL_ENVIRONMENT || 'master';
 
-const client =
-  space && accessToken
-    ? createClient({
-        space,
-        accessToken,
-        environment: process.env.CONTENTFUL_ENVIRONMENT || 'master',
-      })
-    : null;
+function makeClient(preview: boolean) {
+  const accessToken = preview ? previewToken : deliveryToken;
+  if (!space || !accessToken) return null;
+  return createClient({
+    space,
+    accessToken,
+    environment,
+    // The Preview API serves draft (unpublished) content from a different host.
+    host: preview ? 'preview.contentful.com' : undefined,
+  });
+}
+
+const deliveryClient = makeClient(false);
+const previewClient = makeClient(true);
+
+// When previewing, prefer the preview client but fall back to delivery if no
+// preview token is configured.
+function getClient(preview: boolean) {
+  return preview ? previewClient ?? deliveryClient : deliveryClient;
+}
 
 function mapEntry(entry: Entry<VehicleSkeleton, undefined, string>): Vehicle {
   const { name, slug, description, photo } = entry.fields;
@@ -68,7 +82,8 @@ function mapEntry(entry: Entry<VehicleSkeleton, undefined, string>): Vehicle {
 }
 
 /** Fetch every vehicle, sorted by name. Falls back to sample data when unconfigured. */
-export async function getAllVehicles(): Promise<Vehicle[]> {
+export async function getAllVehicles(preview = false): Promise<Vehicle[]> {
+  const client = getClient(preview);
   if (!client) return sampleVehicles;
 
   const entries = await client.getEntries<VehicleSkeleton>({
@@ -80,7 +95,11 @@ export async function getAllVehicles(): Promise<Vehicle[]> {
 }
 
 /** Fetch a single vehicle by slug, or null if it does not exist. */
-export async function getVehicleBySlug(slug: string): Promise<Vehicle | null> {
+export async function getVehicleBySlug(
+  slug: string,
+  preview = false
+): Promise<Vehicle | null> {
+  const client = getClient(preview);
   if (!client) {
     return sampleVehicles.find((v) => v.slug === slug) ?? null;
   }

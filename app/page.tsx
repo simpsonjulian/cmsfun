@@ -1,12 +1,14 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { draftMode } from 'next/headers';
 import { getAllVehicles } from '@/lib/contentful';
 
-// Statically generated at build time (SSG). No request-time data fetching.
-export const dynamic = 'force-static';
+// Statically generated at build time for published content. When Draft Mode is
+// active (Contentful preview), Next renders this dynamically instead.
 
 export default async function HomePage() {
-  const vehicles = await getAllVehicles();
+  const { isEnabled } = await draftMode();
+  const vehicles = await getAllVehicles(isEnabled);
 
   return (
     <>

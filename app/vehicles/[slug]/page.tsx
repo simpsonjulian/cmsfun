@@ -1,13 +1,14 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { draftMode } from 'next/headers';
 import type { Metadata } from 'next';
 import { getAllVehicles, getVehicleBySlug } from '@/lib/contentful';
 
-// SSG: pre-render one static page per vehicle slug at build time.
-export const dynamic = 'force-static';
-// Reject slugs that weren't generated at build time (keeps the route fully static).
-export const dynamicParams = false;
+// SSG: pre-render one static page per published vehicle slug at build time.
+// dynamicParams stays on (the default) so Draft Mode can preview brand-new,
+// not-yet-published entries whose slug isn't in the build-time set. In
+// production an unknown slug just resolves to a 404 via notFound() below.
 
 export async function generateStaticParams() {
   const vehicles = await getAllVehicles();
@@ -20,7 +21,8 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const vehicle = await getVehicleBySlug(slug);
+  const { isEnabled } = await draftMode();
+  const vehicle = await getVehicleBySlug(slug, isEnabled);
   if (!vehicle) return { title: 'Vehicle not found' };
 
   return {
@@ -35,7 +37,8 @@ export default async function VehiclePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const vehicle = await getVehicleBySlug(slug);
+  const { isEnabled } = await draftMode();
+  const vehicle = await getVehicleBySlug(slug, isEnabled);
 
   if (!vehicle) notFound();
 
