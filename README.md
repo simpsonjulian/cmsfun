@@ -46,15 +46,36 @@ Open http://localhost:3000.
 5. Restart the dev server. To pick up new/edited content you re-run the build
    (`npm run build`), since pages are static.
 
-## Deploying to Vercel
+## Deploying to Vercel (CLI)
 
-1. Push this repo to GitHub/GitLab/Bitbucket.
-2. Import the project at [vercel.com/new](https://vercel.com/new).
-3. Add the environment variables in **Project Settings → Environment Variables**:
-   - `CONTENTFUL_SPACE_ID`
-   - `CONTENTFUL_ACCESS_TOKEN`
-   - `CONTENTFUL_ENVIRONMENT` (optional, defaults to `master`)
-4. Deploy. Vercel runs `next build`, producing the static pages.
+Requires the [Vercel CLI](https://vercel.com/docs/cli) (`npm i -g vercel`).
+
+```bash
+# 1. Authenticate (opens a browser; skips if already logged in)
+vercel login
+
+# 2. Create a brand-new Vercel project named "cmsfun"
+vercel project add cmsfun
+
+# 3. Link this directory to that project (auto-detects Next.js)
+vercel link --project cmsfun --yes
+
+# 4. Add Contentful credentials to the Production environment
+#    (each prompts for the value, so secrets stay out of shell history)
+vercel env add CONTENTFUL_SPACE_ID production
+vercel env add CONTENTFUL_ACCESS_TOKEN production
+vercel env add CONTENTFUL_ENVIRONMENT production   # optional; enter "master"
+
+# 5. Deploy to production
+vercel --prod
+```
+
+Notes:
+
+- Skipping step 4 still deploys successfully — it shows the built-in sample data,
+  which is a quick way to smoke-test the deploy.
+- Run plain `vercel` (without `--prod`) any time for a throwaway preview URL.
+- Linking creates a `.vercel/` directory; it's already git-ignored.
 
 To rebuild automatically when content changes, add a
 [Contentful webhook](https://www.contentful.com/developers/docs/concepts/webhooks/)
