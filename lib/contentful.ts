@@ -5,7 +5,6 @@ import {
   type EntryFieldTypes,
   type EntrySkeletonType,
 } from 'contentful';
-import { sampleVehicles } from './sample-data';
 
 /**
  * Shape of the "vehicle" content type as authored in Contentful.
@@ -58,9 +57,19 @@ const deliveryClient = makeClient(false);
 const previewClient = makeClient(true);
 
 // When previewing, prefer the preview client but fall back to delivery if no
-// preview token is configured.
+// preview token is configured. There is no sample-data fallback: if Contentful
+// is not configured we throw, so a misconfigured build/deploy fails loudly
+// rather than silently serving placeholder content.
 function getClient(preview: boolean) {
-  return preview ? previewClient ?? deliveryClient : deliveryClient;
+  const client = preview ? previewClient ?? deliveryClient : deliveryClient;
+  if (!client) {
+    throw new Error(
+      'Contentful is not configured. Set CONTENTFUL_SPACE_ID and ' +
+        'CONTENTFUL_ACCESS_TOKEN (Content Delivery API token) in the ' +
+        'environment. See README.md → "Connecting Contentful".'
+    );
+  }
+  return client;
 }
 
 function mapEntry(entry: Entry<VehicleSkeleton, undefined, string>): Vehicle {
@@ -81,10 +90,9 @@ function mapEntry(entry: Entry<VehicleSkeleton, undefined, string>): Vehicle {
   };
 }
 
-/** Fetch every vehicle, sorted by name. Falls back to sample data when unconfigured. */
+/** Fetch every vehicle, sorted by name. Throws if Contentful is not configured. */
 export async function getAllVehicles(preview = false): Promise<Vehicle[]> {
   const client = getClient(preview);
-  if (!client) return sampleVehicles;
 
   const entries = await client.getEntries<VehicleSkeleton>({
     content_type: 'vehicle',
@@ -100,9 +108,6 @@ export async function getVehicleBySlug(
   preview = false
 ): Promise<Vehicle | null> {
   const client = getClient(preview);
-  if (!client) {
-    return sampleVehicles.find((v) => v.slug === slug) ?? null;
-  }
 
   const entries = await client.getEntries<VehicleSkeleton>({
     content_type: 'vehicle',

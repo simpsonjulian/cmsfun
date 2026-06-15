@@ -17,9 +17,11 @@ npm run dev
 
 Open http://localhost:3000.
 
-> **No Contentful account needed to try it.** If `CONTENTFUL_SPACE_ID` /
-> `CONTENTFUL_ACCESS_TOKEN` are not set, the app falls back to built-in sample
-> data (see `lib/sample-data.ts`).
+> **Contentful is required.** The app reads all content from Contentful — there
+> is no sample-data fallback. If `CONTENTFUL_SPACE_ID` /
+> `CONTENTFUL_ACCESS_TOKEN` are not set, the build (and dev server) fails loudly
+> with a configuration error rather than silently serving placeholder content.
+> Set up your space and credentials below first.
 
 ## Connecting Contentful
 
@@ -84,8 +86,10 @@ vercel --prod
 
 Notes:
 
-- Skipping step 4 still deploys successfully — it shows the built-in sample data,
-  which is a quick way to smoke-test the deploy.
+- Step 4 is required: without `CONTENTFUL_SPACE_ID` / `CONTENTFUL_ACCESS_TOKEN`
+  the build fails (there is no sample-data fallback). This is intentional — a
+  green build proves the pages were statically generated from real Contentful
+  content.
 - Run plain `vercel` (without `--prod`) any time for a throwaway preview URL.
 - Linking creates a `.vercel/` directory; it's already git-ignored.
 
@@ -129,7 +133,6 @@ app/
   globals.css                Styling
 lib/
   contentful.ts              Delivery + preview clients, typed data fetching
-  sample-data.ts             Offline fallback content
 scripts/
   seed-contentful.mjs        One-time content seeder (`npm run seed`)
 ```

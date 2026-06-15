@@ -7,11 +7,6 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'images.ctfassets.net',
       },
-      {
-        // Placeholder images used by the built-in sample data fallback.
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
-      },
     ],
   },
 };

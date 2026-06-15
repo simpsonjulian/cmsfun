@@ -22,8 +22,8 @@ if (!SPACE_ID || !MANAGEMENT_TOKEN) {
   process.exit(1);
 }
 
-// The content to externalise. Mirrors lib/sample-data.ts; edit freely in
-// Contentful afterward — this script only seeds the initial entries.
+// The initial demo content to seed into Contentful; edit freely in Contentful
+// afterward — this script only creates the initial entries.
 const vehicles = [
   {
     name: 'Tesla Model 3',
