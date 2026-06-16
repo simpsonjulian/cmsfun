@@ -1,0 +1,53 @@
+name: Deploy to Vercel
+
+# Replaces the GitHub <-> Vercel auto-deploy integration (now disconnected).
+# Builds and deploys to production with the Vercel CLI on every push to main.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # allow manual "Run workflow" from the Actions tab
+
+# Least privilege: this workflow only checks out code and deploys via the Vercel
+# CLI — it never writes back to the repo, so read-only access is all it needs.
+permissions:
+  contents: read
+
+# Never let two production deploys race; queue them instead of cancelling
+# (cancelling a half-finished deploy can leave an inconsistent release).
+concurrency:
+  group: vercel-production
+  cancel-in-progress: false
+
+env:
+  # Project identifiers (not secrets). `.vercel/` is git-ignored, so CI can't
+  # read them from disk and `vercel pull` needs them up front. Set as repo
+  # variables under Settings -> Secrets and variables -> Actions -> Variables.
+  VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      # Pulls the project's Production environment (incl. CONTENTFUL_SPACE_ID /
+      # CONTENTFUL_ACCESS_TOKEN) from Vercel, so the SSG build has live CMS
+      # credentials without storing any Contentful tokens in GitHub.
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to production
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
