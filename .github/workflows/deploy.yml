@@ -40,11 +40,34 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      # Pulls the project's Production environment (incl. CONTENTFUL_SPACE_ID /
-      # CONTENTFUL_ACCESS_TOKEN) from Vercel, so the SSG build has live CMS
-      # credentials without storing any Contentful tokens in GitHub.
+      # Pulls project settings (and writes .vercel/.env.production.local, the
+      # env file `vercel build` reads). Build settings come from here.
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      # Inject the Contentful credentials from GitHub Actions into the env file
+      # `vercel build` reads. `vercel build` does not pick up plain step/shell
+      # env vars, so we write them to the file. GitHub is the source of truth:
+      # each value overrides whatever `vercel pull` wrote, but only when the
+      # GitHub secret/variable is actually set (so we never blank a pulled value).
+      - name: Expose Contentful credentials to the build
+        env:
+          CONTENTFUL_ACCESS_TOKEN: ${{ secrets.CONTENTFUL_ACCESS_TOKEN }}
+          CONTENTFUL_SPACE_ID: ${{ vars.CONTENTFUL_SPACE_ID }}
+          CONTENTFUL_ENVIRONMENT: ${{ vars.CONTENTFUL_ENVIRONMENT }}
+        run: |
+          f=.vercel/.env.production.local
+          touch "$f"
+          set_var() {
+            local key="$1" val="$2"
+            [ -z "$val" ] && return 0          # leave the pulled value untouched
+            { grep -v "^${key}=" "$f" || true; } > "$f.tmp"   # drop any existing line
+            mv "$f.tmp" "$f"
+            echo "${key}=${val}" >> "$f"
+          }
+          set_var CONTENTFUL_ACCESS_TOKEN "$CONTENTFUL_ACCESS_TOKEN"
+          set_var CONTENTFUL_SPACE_ID "$CONTENTFUL_SPACE_ID"
+          set_var CONTENTFUL_ENVIRONMENT "$CONTENTFUL_ENVIRONMENT"
 
       - name: Build
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
