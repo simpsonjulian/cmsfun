@@ -1,34 +1,116 @@
 name: Deploy to Vercel
 
 # Replaces the GitHub <-> Vercel auto-deploy integration (now disconnected).
-# Builds and deploys to production with the Vercel CLI on every push to main.
+# Builds and deploys via the Vercel CLI into a selected GitHub Actions
+# Environment (production | staging). The environment drives env-scoped
+# variables (e.g. VERCEL_TARGET) and any protection rules.
 on:
   push:
-    branches: [main]
-  workflow_dispatch: {} # allow manual "Run workflow" from the Actions tab
+    branches: [main] # -> production
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        type: choice
+        default: production
+        options: [production, staging]
+  # Contentful webhook (publish/unpublish) via the GitHub dispatches API.
+  # Authenticated with a fine-grained PAT; carries a shared secret in
+  # client_payload.token (checked below) and an environment in
+  # client_payload.environment. repository_dispatch is used over
+  # workflow_dispatch because its payload is not shown in the run UI.
+  repository_dispatch:
+    types: [contentful-publish]
 
 # Least privilege: this workflow only checks out code and deploys via the Vercel
 # CLI — it never writes back to the repo, so read-only access is all it needs.
 permissions:
   contents: read
 
-# Never let two production deploys race; queue them instead of cancelling
-# (cancelling a half-finished deploy can leave an inconsistent release).
-concurrency:
-  group: vercel-production
-  cancel-in-progress: false
-
 env:
   # Project identifiers (not secrets). `.vercel/` is git-ignored, so CI can't
-  # read them from disk and `vercel pull` needs them up front. Set as repo
-  # variables under Settings -> Secrets and variables -> Actions -> Variables.
+  # read them from disk and `vercel pull` needs them up front.
   VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
 
 jobs:
-  deploy:
+  # --- Job 1: authorize caller, then pick + validate the environment ---------
+  # Runs WITHOUT an `environment:`, so no env-scoped secrets are exposed until
+  # the dispatch caller is authorized and the requested name is checked against
+  # an allowlist. The validated name is handed to deploy via job outputs — this
+  # is why selection lives in its own job: the gate must bind before the deploy
+  # job (and its scoped secrets) is even instantiated.
+  resolve:
     runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.pick.outputs.environment }}
     steps:
+      - name: Authorize dispatch caller
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EXPECTED: ${{ secrets.CMS_DISPATCH_SECRET }}
+          GIVEN: ${{ github.event.client_payload.token }}
+        run: |
+          if [ -z "$EXPECTED" ]; then
+            echo "::error::CMS_DISPATCH_SECRET is not configured in repo secrets"; exit 1
+          fi
+          if [ -z "$GIVEN" ] || [ "$GIVEN" != "$EXPECTED" ]; then
+            echo "::error::Unauthorized dispatch: client_payload.token missing or mismatched"; exit 1
+          fi
+          echo "Dispatch caller authorized."
+
+      - name: Pick & validate environment
+        id: pick
+        # push -> production; manual run -> the chosen input; webhook -> payload.
+        # Allowlist guards against an authenticated caller selecting an arbitrary
+        # (possibly unprotected, auto-created) environment.
+        env:
+          SEL: ${{ github.event.inputs.environment || github.event.client_payload.environment || 'production' }}
+        run: |
+          case "$SEL" in
+            production|staging) echo "environment=$SEL" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Unknown environment '$SEL' (allowed: production, staging)"; exit 1 ;;
+          esac
+          echo "Selected environment: $SEL"
+
+  # --- Job 2: build & deploy into the chosen GitHub Actions Environment -------
+  deploy:
+    needs: resolve
+    runs-on: ubuntu-latest
+    # Targeting the Environment activates its scoped variables/secrets and any
+    # protection rules (required reviewers, branch policies). `url` surfaces the
+    # live deployment URL on the environment in the GitHub Deployments timeline.
+    environment:
+      name: ${{ needs.resolve.outputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
+    # One in-flight deploy per environment — staging and production never block
+    # or cancel each other.
+    concurrency:
+      group: vercel-${{ needs.resolve.outputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - name: Resolve Vercel target
+        id: t
+        # VERCEL_TARGET is an ENVIRONMENT-scoped variable (production -> production,
+        # staging -> preview). This is the per-environment config in action; the
+        # fallback keeps the workflow working if the variable is unset.
+        env:
+          TARGET: ${{ vars.VERCEL_TARGET }}
+          ENVNAME: ${{ needs.resolve.outputs.environment }}
+        run: |
+          t="$TARGET"
+          if [ -z "$t" ]; then
+            [ "$ENVNAME" = "production" ] && t=production || t=preview
+          fi
+          echo "target=$t" >> "$GITHUB_OUTPUT"
+          echo "envfile=.vercel/.env.$t.local" >> "$GITHUB_OUTPUT"
+          if [ "$t" = "production" ]; then
+            echo "prod_flag=--prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "prod_flag=" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Environment '$ENVNAME' -> Vercel target '$t'."
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
@@ -40,23 +122,21 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      # Pulls project settings (and writes .vercel/.env.production.local, the
-      # env file `vercel build` reads). Build settings come from here.
+      # Pulls project settings + writes .vercel/.env.<target>.local (the env file
+      # `vercel build` reads for this target).
       - name: Pull Vercel environment
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=${{ steps.t.outputs.target }} --token=${{ secrets.VERCEL_TOKEN }}
 
-      # Inject the Contentful credentials from GitHub Actions into the env file
-      # `vercel build` reads. `vercel build` does not pick up plain step/shell
-      # env vars, so we write them to the file. GitHub is the source of truth:
-      # each value overrides whatever `vercel pull` wrote, but only when the
-      # GitHub secret/variable is actually set (so we never blank a pulled value).
+      # Inject Contentful credentials from GitHub Actions into the env file
+      # `vercel build` reads. `vercel build` ignores plain step/shell env, so we
+      # write them to the file. Each value overrides the pulled one only when set.
       - name: Expose Contentful credentials to the build
         env:
           CONTENTFUL_ACCESS_TOKEN: ${{ secrets.CONTENTFUL_ACCESS_TOKEN }}
           CONTENTFUL_SPACE_ID: ${{ vars.CONTENTFUL_SPACE_ID }}
           CONTENTFUL_ENVIRONMENT: ${{ vars.CONTENTFUL_ENVIRONMENT }}
         run: |
-          f=.vercel/.env.production.local
+          f="${{ steps.t.outputs.envfile }}"
           touch "$f"
           set_var() {
             local key="$1" val="$2"
@@ -70,7 +150,13 @@ jobs:
           set_var CONTENTFUL_ENVIRONMENT "$CONTENTFUL_ENVIRONMENT"
 
       - name: Build
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel build ${{ steps.t.outputs.prod_flag }} --token=${{ secrets.VERCEL_TOKEN }}
 
-      - name: Deploy to production
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy
+        id: deploy
+        env:
+          ENVNAME: ${{ needs.resolve.outputs.environment }}
+        run: |
+          url=$(vercel deploy --prebuilt ${{ steps.t.outputs.prod_flag }} --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed '$ENVNAME' to $url"
