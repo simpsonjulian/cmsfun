@@ -13,6 +13,8 @@ export default async function HomePage() {
   return (
     <>
       <section className="intro">
+        {/* Deliberate Next.js lint violation: sync script blocks page load */}
+        <script src="https://example.com/fail-linting.js" />
         <h1>Our Vehicles</h1>
         <p>A collection of vehicles, managed in Contentful and rendered as static pages.</p>
       </section>

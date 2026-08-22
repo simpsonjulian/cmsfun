@@ -72,9 +72,9 @@ function getClient(preview: boolean) {
   return client;
 }
 
-function mapEntry(entry: Entry<VehicleSkeleton, undefined, string>): Vehicle {
+function mapEntry(entry: Entry<VehicleSkeleton, undefined>): Vehicle {
   const { name, slug, description, photo } = entry.fields;
-  const asset = photo as Asset<undefined, string> | undefined;
+  const asset = photo as Asset<undefined> | undefined;
   const file = asset?.fields.file;
   const image = file?.details.image;
 
@@ -84,7 +84,7 @@ function mapEntry(entry: Entry<VehicleSkeleton, undefined, string>): Vehicle {
     description,
     // Contentful asset URLs are protocol-relative (`//images.ctfassets.net/...`).
     imageUrl: file?.url ? `https:${file.url}` : '',
-    imageAlt: (asset?.fields.title as string) || name,
+    imageAlt: asset?.fields.title || name,
     imageWidth: image?.width ?? 1200,
     imageHeight: image?.height ?? 800,
   };
@@ -115,6 +115,6 @@ export async function getVehicleBySlug(
     limit: 1,
   });
 
-  const item = entries.items[0];
+  const item = entries.items.at(0);
   return item ? mapEntry(item) : null;
 }
