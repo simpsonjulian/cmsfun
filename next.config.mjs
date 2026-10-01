@@ -15,8 +15,15 @@ const csp = {
     ...(isDev ? ["'unsafe-eval'", 'https://va.vercel-scripts.com'] : []),
     ...vercelToolbar,
   ],
-  // next/image and the `style` prop emit inline style attributes.
-  'style-src': ["'self'", "'unsafe-inline'", ...vercelToolbar],
+  // React never renders inline event handlers, so block them outright. This
+  // stops attribute-based injections (e.g. <img onerror=…>) despite the
+  // 'unsafe-inline' above, which then only covers <script> elements.
+  'script-src-attr': ["'none'"],
+  // No inline <style> elements in production. Dev injects them for CSS HMR and
+  // the error overlay; the preview toolbar injects its own.
+  'style-src': ["'self'", ...(isDev || isVercelPreview ? ["'unsafe-inline'"] : []), ...vercelToolbar],
+  // next/image (`fill`) and the `style` prop emit inline style attributes.
+  'style-src-attr': ["'unsafe-inline'"],
   // Contentful images are proxied through /_next/image, so they're same-origin.
   'img-src': ["'self'", 'data:', 'blob:', ...(isVercelPreview ? ['https://vercel.live', 'https://vercel.com'] : [])],
   'font-src': ["'self'", ...(isVercelPreview ? ['https://vercel.live', 'https://assets.vercel.com'] : [])],
